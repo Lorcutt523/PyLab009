@@ -2,6 +2,8 @@ import json
 import os
 import random
 import re
+import sys
+
 
 HOW_MANY_BOOK = 3
 LINE = 128
@@ -41,12 +43,6 @@ def add_line():
     process_page( ''.join(char_window), line_number )
     char_window.clear()
 
-def process_char(char):
-    global char_window
-    char_window.append(char)
-    if len(char_window) == LINE:
-        add_line()
-
 def process_page(line, line_num):
     global line_window, pages, page_number
     line_window[line_num] = line
@@ -80,6 +76,7 @@ def generate_code_book():
 
 
 def save(file_path, book):
+    os.makedirs(os.path.dirname(file_path), exist_ok=True)
     with open(file_path, 'w') as fp:
         #son.dump(book, fp, indent=4)
         json.dump(book, fp)
@@ -87,18 +84,35 @@ def save(file_path, book):
 
 def load(file_path, *key_books):
     if os.path.exists(file_path):
-        with open(file_path, 'r') as fp, open(file_path.replace('.json', '_r.json')) as fp2:
+        rev_path = file_path.replace('.json', '_r.json')
+        with open(file_path, 'r') as fp, open(rev_path, 'r') as fp2:
             return json.load(fp2), json.load(fp)
     else:
+        global pages, page_number, line_window, line_number, char_window
+        pages = {}
+        page_number = 0
+        line_window = {}
+        line_number = 0
+        char_window = []
+
         process_books(*key_books)
-        save(file_path.replace('.json', '_r.json'), pages)
+        rev_path = file_path.replace('.json', '_r.json')
+
+        pages_str = {str(k): {str(k2): v2 for k2, v2 in v.items()}
+        for k, v in pages.items()}
+
+        save(rev_path, pages_str)
         code_book = generate_code_book()
-        save(file_path, code_book)
-        return (pages, code_book)
+        save(rev_path, code_book)
+        return (pages_str, code_book)
 
 def encrypt(code_book, message):
     cipher_text = []
     for char in message:
+        if char not in code_book:
+            raise ValueError(f"{char} is not in code_book")
+        if len(code_book[char]) == 0:
+            raise ValueError(f"No more positions available for '{char}")
         index = random.randint(0, len(code_book[char]) - 1)
         cipher_text.append(code_book[char].pop(index))
     return ':'.join(cipher_text)
@@ -107,15 +121,52 @@ def decrypt(rev_code_book, ciphertext):
     plaintext = []
     for cc in re.findall(r'\d+:\d+:\d+', ciphertext):
         page, line, char = cc.split(':')
-        plaintext.append(
-            rev_code_book[page][line][int(char)])
+        plaintext.append(rev_code_book[page][line][int(char)])
     return ''.join(plaintext)
 
+def main_menu():
+    print("""1). Encrypt
+2). Decrypt
+3). Quit
+""");
+    return int(input("Make a selection [1,2,3]: "))
 
 
-p, cb = load('./code_books/book1.json', './books/love_song.txt')
-print(encrypt(cb, 'Let us'))
-print(decrypt(p, '1:5:101:1:5:58:1:29:35:1:44:27-1:3:48:1:32:79'))
+def main():
+    key_books = ('books/War_and_Peace.txt', 'books/Moby_Dick.txt', 'books/Dracula.txt')
+    code_book_path = 'code_books/dmdwp.json'
+
+    while True:
+        try:
+            choice = main_menu()
+            if choice == 1:
+                rev_code_book, code_book = load(code_book_path, *key_books)
+                message = input("Enter secret message: ")
+                encrypted = encrypt(code_book, message)
+                print(f"Encrypted message: {encrypted}")
+            elif choice == 2:
+                rev_code_book, code_book = load(code_book_path, *key_books)
+                message = input("Enter your cipher text: ")
+                decrypted = decrypt(rev_code_book, message)
+                print(f"Decrypted message: {decrypted}")
+            elif choice == 3:
+                sys.exit(0)
+            else: print("Invalid selection")
+        except ValueError as ve:
+            print(f"ValueError: {ve}")
+        except KeyError as ke:
+            print(f"KeyError: {ke}")
+        except Exception as e:
+            print(f"Exception: {e}")
+
+
+
+if __name__ == '__main__':
+    main()
+
+
+#p, cb = load('./code_books/book1.json', './books/love_song.txt')
+#print(decrypt(p, '1:5:101:1:5:58:1:29:35:1:44:27-1:3:48:1:32:79'))
 
 #print(len(p), len(cb))
 #process_books('love_song'.txt')
